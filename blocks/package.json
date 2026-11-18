@@ -1,0 +1,8 @@
+{
+  "name": "block-stack",
+  "private": true,
+  "description": "간단한 블록 쌓기 게임",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  }
+}
