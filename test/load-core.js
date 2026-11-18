@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const HTML_PATH = path.join(__dirname, '..', 'index.html');
+const HTML_PATH = path.join(__dirname, '..', process.env.TALLY_FILE || 'index.html');
 
 function readHtml() {
   return fs.readFileSync(HTML_PATH, 'utf8');

@@ -182,3 +182,11 @@ test('formatPercent: 소수 첫째 자리, 전체 0이면 "-"', () => {
   assert.equal(T.formatPercent(0, 4), '0.0%');
   assert.equal(T.formatPercent(0, 0), '-');
 });
+
+test('tally: counts 는 점수별 건수 (index2 전용 필드, 있으면 합이 유효 응답과 같다)', () => {
+  const r = T.tally(tab(['번호', 'Q1'], ['1', '5'], ['2', '5'], ['3', '1'], ['4', ''], ['5', '9'], ['6', ' 3 ']));
+  const q = r.questions[0];
+  if (q.counts === undefined) return; // index.html 에는 없다
+  assert.deepEqual(q.counts, [1, 0, 1, 0, 2]);
+  assert.equal(q.counts.reduce((a, b) => a + b, 0), q.valid);
+});
