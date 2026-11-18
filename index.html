@@ -30,6 +30,21 @@
   th:first-child, td:first-child { text-align:left; overflow-wrap:anywhere; }
   tbody tr:last-child td { border-bottom:0; }
   thead th { background:var(--bg); font-weight:600; white-space:nowrap; }
+  :root { --c-valid:#2f6fd0; --c-blank:#8d8c85; --c-excluded:#d9731a; }
+  @media (prefers-color-scheme: dark) { :root { --c-valid:#6aa5ff; --c-blank:#9d9c95; --c-excluded:#f0954a; } }
+  h2 { font-size:1.125rem; margin:28px 0 10px; }
+  .charts { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+  .chart { border:1px solid var(--line); border-radius:8px; background:var(--card); padding:12px; }
+  .chart h3 { font-size:1rem; margin:0 0 8px; overflow-wrap:anywhere; }
+  .chart svg { display:block; width:140px; height:140px; margin:0 auto 8px; }
+  .chart .slice { stroke:var(--card); stroke-width:1; }
+  .chart .empty { color:var(--muted); text-align:center; padding:56px 0; margin:0 0 8px; }
+  .legend { list-style:none; margin:0; padding:0; font-size:.875rem; }
+  .legend li { display:flex; gap:6px; align-items:baseline; }
+  .swatch { flex:none; width:10px; height:10px; border-radius:2px; align-self:center; }
+  .c-valid { background:var(--c-valid); fill:var(--c-valid); }
+  .c-blank { background:var(--c-blank); fill:var(--c-blank); }
+  .c-excluded { background:var(--c-excluded); fill:var(--c-excluded); }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -52,6 +67,10 @@
       <tbody id="body"></tbody>
     </table>
   </div>
+  <section id="chartSection" hidden>
+    <h2>문항별 비율</h2>
+    <div class="charts" id="charts"></div>
+  </section>
   <p class="privacy" id="rules">유효: 1~5 (앞뒤 공백 무시) · 빈 응답: 비었거나 공백뿐 · 제외: 그 밖의 값 · 평균: 유효 응답의 합 ÷ 유효 응답 수, 소수 둘째 자리(유효 0건이면 -)</p>
 </main>
 <!-- 계산 로직: 화면(DOM)과 무관. test/tally.test.js 가 이 블록만 뽑아 시험한다. -->
@@ -161,7 +180,29 @@
     return { ok: true, questions: questions, responseCount: rows.length - 1 };
   }
 
-  root.SurveyTally = { parseTSV: parseTSV, classifyCell: classifyCell, formatAverage: formatAverage, tally: tally };
+  // 파이 차트 조각 계산. 값이 0인 조각은 뺀다. start/end 는 12시 방향에서 시계 방향으로 0~1.
+  function pieSlices(parts) {
+    var total = 0;
+    var i;
+    for (i = 0; i < parts.length; i++) total += parts[i].value;
+    if (total <= 0) return [];
+    var slices = [];
+    var acc = 0;
+    for (i = 0; i < parts.length; i++) {
+      if (parts[i].value <= 0) continue;
+      slices.push({ key: parts[i].key, value: parts[i].value, start: acc / total, end: (acc + parts[i].value) / total });
+      acc += parts[i].value;
+    }
+    return slices;
+  }
+
+  // 소수 첫째 자리 백분율 문자열. 전체가 0이면 '-'.
+  function formatPercent(value, total) {
+    if (!total) return '-';
+    return (Math.round(value * 1000 / total) / 10).toFixed(1) + '%';
+  }
+
+  root.SurveyTally = { parseTSV: parseTSV, classifyCell: classifyCell, formatAverage: formatAverage, tally: tally, pieSlices: pieSlices, formatPercent: formatPercent };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
 <script>
@@ -171,6 +212,7 @@
   var status = document.getElementById('status');
   var result = document.getElementById('result');
   var body = document.getElementById('body');
+  var chartSection = document.getElementById('chartSection');
 
   function cell(tag, text) {
     var el = document.createElement(tag);
@@ -178,10 +220,81 @@
     return el;
   }
 
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var PARTS = [
+    { key: 'valid', label: '유효 응답' },
+    { key: 'blank', label: '빈 응답' },
+    { key: 'excluded', label: '제외' }
+  ];
+
+  function svgEl(name, attrs) {
+    var el = document.createElementNS(SVG_NS, name);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function point(frac, r) {
+    var a = frac * 2 * Math.PI; // 12시 방향에서 시계 방향
+    return (50 + r * Math.sin(a)).toFixed(3) + ' ' + (50 - r * Math.cos(a)).toFixed(3);
+  }
+
+  function drawPie(slices, label) {
+    var r = 46;
+    var svg = svgEl('svg', { viewBox: '0 0 100 100', role: 'img', 'aria-label': label });
+    var title = svgEl('title', {});
+    title.textContent = label;
+    svg.appendChild(title);
+    slices.forEach(function (sl) {
+      var node;
+      if (sl.end - sl.start >= 1) {
+        node = svgEl('circle', { cx: 50, cy: 50, r: r });
+      } else {
+        var large = (sl.end - sl.start) > 0.5 ? 1 : 0;
+        node = svgEl('path', { d: 'M50 50 L' + point(sl.start, r) + ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + point(sl.end, r) + ' Z' });
+      }
+      node.setAttribute('class', 'slice c-' + sl.key);
+      svg.appendChild(node);
+    });
+    return svg;
+  }
+
+  function renderCharts(questions) {
+    var box = document.getElementById('charts');
+    box.textContent = '';
+    questions.forEach(function (q) {
+      var parts = PARTS.map(function (p) { return { key: p.key, label: p.label, value: q[p.key] }; });
+      var total = parts.reduce(function (n, p) { return n + p.value; }, 0);
+      var card = document.createElement('div');
+      card.className = 'chart';
+      card.appendChild(cell('h3', q.name));
+      var summary = q.name + ': ' + parts.map(function (p) {
+        return p.label + ' ' + p.value + '건(' + SurveyTally.formatPercent(p.value, total) + ')';
+      }).join(', ');
+      if (total === 0) {
+        card.appendChild(cell('p', '응답 없음')).className = 'empty';
+      } else {
+        card.appendChild(drawPie(SurveyTally.pieSlices(parts), summary));
+      }
+      var ul = document.createElement('ul');
+      ul.className = 'legend';
+      parts.forEach(function (p) {
+        var li = document.createElement('li');
+        var sw = document.createElement('span');
+        sw.className = 'swatch c-' + p.key;
+        li.appendChild(sw);
+        li.appendChild(cell('span', p.label + ' ' + p.value + '건 (' + SurveyTally.formatPercent(p.value, total) + ')'));
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+      box.appendChild(card);
+    });
+  }
+
   function render() {
     var text = input.value;
     body.textContent = '';
     status.className = '';
+    chartSection.hidden = true;
     if (text.trim() === '') {
       result.hidden = true;
       status.textContent = '';
@@ -206,6 +319,8 @@
       body.appendChild(tr);
     });
     result.hidden = false;
+    renderCharts(r.questions);
+    chartSection.hidden = false;
     status.textContent = '응답 ' + r.responseCount + '건 · 문항 ' + r.questions.length + '개';
   }
 

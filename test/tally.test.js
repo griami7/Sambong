@@ -159,3 +159,26 @@ test('tally: 큰 입력 (1만 줄)', () => {
   assert.equal(r.questions[0].average, '3.00');
   assert.equal(r.questions[1].blank, 1428);
 });
+
+test('pieSlices: 0인 조각은 빼고 시계 방향 0~1 구간을 돌려준다', () => {
+  const s = T.pieSlices([{ key: 'a', value: 1 }, { key: 'b', value: 0 }, { key: 'c', value: 3 }]);
+  assert.deepEqual(s, [
+    { key: 'a', value: 1, start: 0, end: 0.25 },
+    { key: 'c', value: 3, start: 0.25, end: 1 },
+  ]);
+});
+
+test('pieSlices: 조각이 하나면 0~1 전체, 전부 0이면 빈 배열', () => {
+  assert.deepEqual(T.pieSlices([{ key: 'a', value: 5 }, { key: 'b', value: 0 }]), [{ key: 'a', value: 5, start: 0, end: 1 }]);
+  assert.deepEqual(T.pieSlices([{ key: 'a', value: 0 }]), []);
+  assert.deepEqual(T.pieSlices([]), []);
+});
+
+test('formatPercent: 소수 첫째 자리, 전체 0이면 "-"', () => {
+  assert.equal(T.formatPercent(1, 3), '33.3%');
+  assert.equal(T.formatPercent(2, 3), '66.7%');
+  assert.equal(T.formatPercent(1, 8), '12.5%');
+  assert.equal(T.formatPercent(4, 4), '100.0%');
+  assert.equal(T.formatPercent(0, 4), '0.0%');
+  assert.equal(T.formatPercent(0, 0), '-');
+});
