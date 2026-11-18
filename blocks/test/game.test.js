@@ -1,7 +1,15 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const G = require('../game.js');
+const fs = require('node:fs');
+const path = require('node:path');
+
+// 규칙 코드는 index.html 의 <script id="block-core"> 안에 있다. 그 부분만 뽑아 화면 없이 실행한다.
+const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const code = html.match(/<script id="block-core">([\s\S]*?)<\/script>/)[1];
+const mod = { exports: {} };
+new Function('module', code)(mod);
+const G = mod.exports;
 
 // 시험용 고정 난수
 function seeded(seed) {
